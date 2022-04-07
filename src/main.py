@@ -47,8 +47,7 @@ class FileOperator:
     @staticmethod
     def write(file, obj: str):
         with open(file, "w") as f:
-            print(file)
-            f.write("obj")
+            f.write(obj)
 
     @staticmethod
     def write_csv(file, container: List[Union[Match, HashedFile]]):
@@ -58,6 +57,13 @@ class FileOperator:
             writer.writeheader()
             for item in container:
                 writer.writerow(item.__dict__)
+
+    @staticmethod
+    def zip(files: List[str]):
+        """
+        this method should compress all files that were found into a single zip file.
+        """
+        pass
 
 
 class CoreController:
@@ -93,7 +99,6 @@ class CoreController:
         ]
 
     def main(self):
-
         process_snapshot = self.get_running_processes()
 
         current = Path(self.root)
@@ -112,13 +117,11 @@ class CoreController:
             fingerprint = self.touch_sha256(Path(file))
             self.hashed_files.append(HashedFile(file, fingerprint))
 
-        # print(self._found_patterns)
-        # print(self.hashed_files)
-
         self.file_operator.write(
             "process_snapshot.txt", process_snapshot.stdout.decode("utf-8")
         )
         self.file_operator.write_csv("hashed_files.csv", self.hashed_files)
+        self.file_operator.write_csv("found_patterns.csv", self._found_patterns)
 
     def add_match(self, match: Match) -> None:
         self._found_patterns.append(match)
@@ -148,22 +151,22 @@ class CoreController:
                 h.update(chunk)
         return h.hexdigest()
 
-    def decode_base58(self, bc, length):
-        digits58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-        n = 0
-        for char in bc:
-            n = n * 58 + digits58.index(char)
-        return n.to_bytes(length, "big")
-
-    def check_bc(self, bc):
-        try:
-            bcbytes = self.decode_base58(bc, 25)
-            return (
-                bcbytes[-4:]
-                == hashlib.sha256(hashlib.sha256(bcbytes[:-4]).digest()).digest()[:4]
-            )
-        except Exception:
-            return False
+    # def decode_base58(self, bc, length):
+    #     digits58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    #     n = 0
+    #     for char in bc:
+    #         n = n * 58 + digits58.index(char)
+    #     return n.to_bytes(length, "big")
+    #
+    # def check_bc(self, bc):
+    #     try:
+    #         bcbytes = self.decode_base58(bc, 25)
+    #         return (
+    #             bcbytes[-4:]
+    #             == hashlib.sha256(hashlib.sha256(bcbytes[:-4]).digest()).digest()[:4]
+    #         )
+    #     except Exception:
+    #         return False
 
 
 def main():
