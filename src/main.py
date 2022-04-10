@@ -15,9 +15,10 @@ from pathlib import Path
 import os
 import time
 import csv
+from zipfile import ZipFile
 
 from typing import List, Tuple, Union
-from regular_expressions import PATTERNS
+from regular_expressions import PATTERNS, EXODUS, ELECTRUM
 from dataclasses import dataclass
 
 DEFAULT_EXODUS = "~/.config/Exodus"
@@ -59,27 +60,26 @@ class FileOperator:
                 writer.writerow(item.__dict__)
 
     @staticmethod
-    def zip(files: List[str]):
-        """
-        this method should compress all files that were found into a single zip file.
-        """
-        pass
+    def compress(files: List[str]):
+        with ZipFile("testzipwallet.zip", "w") as zipfile:
+            for file in files:
+                zipfile.write(file)
 
 
 class CoreController:
-    def __init__(self, root=".", report_file=None):
-        self.root = root
+    def __init__(self, root=".", report_file_name=None):
+        self.root: str = root
         self._found_patterns: List[Match] = []
-        self.report_file = report_file or self.generate_filename()
+        self.report_file: str = report_file_name or self.generate_filename()
         self.hashed_files: List[HashedFile] = []
         self.file_operator = FileOperator()
 
     @staticmethod
-    def generate_filename():
+    def generate_filename() -> str:
         return time.strftime("%Y%m%d-%H%M%S") + " wallet-forensic"
 
     @staticmethod
-    def inappropriate_format(file: str):
+    def inappropriate_format(file: str) -> bool:
         """
         should check if file is executable binary
         if it is return True, else return False
@@ -98,8 +98,21 @@ class CoreController:
             ".gif",
         ]
 
-    def main(self):
+    @staticmethod
+    def examine_process_snapshot(process_snapshot: subprocess.CompletedProcess) -> bool:
+        """
+        check current running processes and return number
+        of indications that some crypto process might be running in
+        the backround
+        """
+        if re.search(EXODUS, process_snapshot.stdout) or re.search(ELECTRUM, process_snapshot.stdout):
+            return True
+        return False
+
+
+    def main(self) -> None:
         process_snapshot = self.get_running_processes()
+        indication = self.examine_process_snapshot(process_snapshot)
 
         current = Path(self.root)
         current_absolute = str(current.absolute())
@@ -111,7 +124,7 @@ class CoreController:
                 self.search_for_pattern(abs_path)
 
         files = [match.file for match in self._found_patterns]
-        files = set(files)
+        files = list(set(files))
 
         for file in files:
             fingerprint = self.touch_sha256(Path(file))
@@ -122,11 +135,15 @@ class CoreController:
         )
         self.file_operator.write_csv("hashed_files.csv", self.hashed_files)
         self.file_operator.write_csv("found_patterns.csv", self._found_patterns)
+        self.file_operator.compress(files)
+
+        print(f"Found {len(files)} files containing bitcoin related patterns")
+        print(f"Process history indicates {indication}")
 
     def add_match(self, match: Match) -> None:
         self._found_patterns.append(match)
 
-    def search_for_pattern(self, file, mode="rb"):
+    def search_for_pattern(self, file: str, mode="rb"):
         for i, line in enumerate(open(file, mode)):
             for key in PATTERNS.keys():
                 match = re.search(PATTERNS[key], line)

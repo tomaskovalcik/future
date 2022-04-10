@@ -4,6 +4,9 @@
 
 # https://stackoverflow.com/questions/21683680/regex-to-match-bitcoin-addresses/48643915#48643915
 
+EXODUS = b"[eE]xodus"
+ELECTRUM = b"[eE]lectrum"
+
 PATTERNS = {
     "BITCOIN_VANINITY_ADDRESS": b"[1a-km-zA-HJ-NP-Z1-9]{24,33}",
     "BITCOIN_P2SH": b"^[a-km-zA-HJ-NP-Z1-9]{24,33}",  # multisignature,
