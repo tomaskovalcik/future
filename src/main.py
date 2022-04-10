@@ -38,6 +38,49 @@ class HashedFile:
     fingerprint: str
 
 
+class Processor:
+    def __init__(self):
+        self.host_information = os.uname()
+
+    def get_host_information(self) -> str:
+        return (
+            f"sysname={self.host_information.sysname}, "
+            f"nodename={self.host_information.nodename}, "
+            f"release={self.host_information.release}, "
+            f"version={self.host_information.version}, "
+            f"machine={self.host_information.machine}"
+        )
+
+    @staticmethod
+    def examine_process_snapshot(process_snapshot: subprocess.CompletedProcess) -> bool:
+        """
+        check current running processes and return number
+        of indications that some crypto process might be running in
+        the backround
+        """
+        if re.search(EXODUS, process_snapshot.stdout) or re.search(
+            ELECTRUM, process_snapshot.stdout
+        ):
+            return True
+        return False
+
+    @staticmethod
+    def get_running_processes() -> subprocess.CompletedProcess:
+        # should return something list or tuple of running processes or just save the current process list
+        # for later analysis
+        return subprocess.run(["ps", "-eo", "pid,args"], capture_output=True)
+
+    @staticmethod
+    def examine_command_history() -> bool:
+        path = Path("~/.bash_history")
+        if path.expanduser().exists():
+            with open(path.expanduser(), "rb") as file:
+                for line in file:
+                    if re.search(EXODUS, line) or re.search(ELECTRUM, line):
+                        return True
+        return False
+
+
 class FileOperator:
     """
     A job of this class is to provide an interface to
@@ -66,13 +109,14 @@ class FileOperator:
                 zipfile.write(file)
 
 
-class CoreController:
+class Controller:
     def __init__(self, root=".", report_file_name=None):
         self.root: str = root
         self._found_patterns: List[Match] = []
         self.report_file: str = report_file_name or self.generate_filename()
         self.hashed_files: List[HashedFile] = []
         self.file_operator = FileOperator()
+        self.processor = Processor()
 
     @staticmethod
     def generate_filename() -> str:
@@ -98,21 +142,10 @@ class CoreController:
             ".gif",
         ]
 
-    @staticmethod
-    def examine_process_snapshot(process_snapshot: subprocess.CompletedProcess) -> bool:
-        """
-        check current running processes and return number
-        of indications that some crypto process might be running in
-        the backround
-        """
-        if re.search(EXODUS, process_snapshot.stdout) or re.search(ELECTRUM, process_snapshot.stdout):
-            return True
-        return False
-
-
     def main(self) -> None:
-        process_snapshot = self.get_running_processes()
-        indication = self.examine_process_snapshot(process_snapshot)
+        process_snapshot = self.processor.get_running_processes()
+        command_history = self.processor.examine_command_history()
+        indication = self.processor.examine_process_snapshot(process_snapshot)
 
         current = Path(self.root)
         current_absolute = str(current.absolute())
@@ -138,7 +171,8 @@ class CoreController:
         self.file_operator.compress(files)
 
         print(f"Found {len(files)} files containing bitcoin related patterns")
-        print(f"Process history indicates {indication}")
+        print(f"Wallet/bitcoin processes running: {indication}")
+        print(f"Wallet/bitcoin command used: {command_history}")
 
     def add_match(self, match: Match) -> None:
         self._found_patterns.append(match)
@@ -149,12 +183,6 @@ class CoreController:
                 match = re.search(PATTERNS[key], line)
                 if match:
                     self.add_match(Match(file, match.group().decode("utf-8"), key))
-
-    @staticmethod
-    def get_running_processes() -> subprocess.CompletedProcess:
-        # should return something list or tuple of running processes or just save the current process list
-        # for later analysis
-        return subprocess.run(["ps", "-eo", "pid,args"], capture_output=True)
 
     def touch_sha256(self, file: Path) -> str:
         # solution obtained from the following link:
@@ -168,32 +196,14 @@ class CoreController:
                 h.update(chunk)
         return h.hexdigest()
 
-    # def decode_base58(self, bc, length):
-    #     digits58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-    #     n = 0
-    #     for char in bc:
-    #         n = n * 58 + digits58.index(char)
-    #     return n.to_bytes(length, "big")
-    #
-    # def check_bc(self, bc):
-    #     try:
-    #         bcbytes = self.decode_base58(bc, 25)
-    #         return (
-    #             bcbytes[-4:]
-    #             == hashlib.sha256(hashlib.sha256(bcbytes[:-4]).digest()).digest()[:4]
-    #         )
-    #     except Exception:
-    #         return False
-
 
 def main():
     # not really important now, does not do anything
     parser = argparse.ArgumentParser(description="Look for bitcoin artifacts")
     parser.add_argument("--fast", help="Performs fast scan of /home directory")
     args = parser.parse_args()
-    print(args)
 
-    c = CoreController("/home/tom/erazmus")
+    c = Controller("/home/tom/erazmus")
     c.main()
 
 
