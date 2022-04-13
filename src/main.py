@@ -22,9 +22,6 @@ from typing import List, Union
 from regular_expressions import PATTERNS, EXODUS, ELECTRUM
 from dataclasses import dataclass
 
-DEFAULT_EXODUS = "~/.config/Exodus"
-DEFAULT_ELECTRUM = "~/.electrum"
-
 
 @dataclass
 class Match:
@@ -88,6 +85,7 @@ class FileOperator:
     perform operations on files that were created during digital forensic
     compression, writing to files (CSV, txt).
     """
+
     def __init__(self, run_name):
         self._run_name = run_name
         self._run_timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -118,7 +116,12 @@ class FileOperator:
 
 class Controller:
     def __init__(
-        self, root=".", run_name=None, target_wallet=None, verbose: bool = False
+        self,
+        root=".",
+        run_name=None,
+        target_wallet=None,
+        verbose: bool = False,
+        silent: bool = False,
     ):
         self.root: str = root
         self._found_patterns: List[Match] = []
@@ -127,7 +130,12 @@ class Controller:
         self.file_operator = FileOperator(run_name)
         self.processor = Processor()
         self.verbose = verbose
+        self.silent = silent
         self.target_wallet = target_wallet
+        self.default_wallets_paths = {
+            "exodus": "~/.config/Exodus",
+            "electrum": "~/.electrum",
+        }
 
     @staticmethod
     def inappropriate_format(file: str) -> bool:
@@ -156,10 +164,21 @@ class Controller:
         current.expanduser()
         return current.absolute()
 
+    def specific_wallet_check(self):
+        path = (
+            Path(self.default_wallets_paths[self.target_wallet]).expanduser().absolute()
+        )
+        if not path.exists():
+            return False
+        return True
+
     def main(self) -> None:
         process_snapshot = self.processor.get_running_processes()
         command_history = self.processor.examine_command_history()
         indication = self.processor.examine_process_snapshot(process_snapshot)
+
+        if self.target_wallet:
+            print(self.specific_wallet_check())
 
         current_absolute = self._resolve_path()
         for root, _, files in os.walk(current_absolute):
@@ -175,12 +194,20 @@ class Controller:
             fingerprint = self._touch_sha256(Path(file))
             self.hashed_files.append(HashedFile(file, fingerprint))
 
-        self.file_operator.write(
-            process_snapshot.stdout.decode("utf-8"),  unique_id="process_snapshot"
-        )
-        self.file_operator.write_csv(unique_id="hashed_files", container=self.hashed_files)
-        self.file_operator.write_csv(unique_id="artefacts", container=self._found_patterns)
-        self.file_operator.compress(container=files)
+        # TODO: remove if/else in the final version
+        if not self.silent:
+            pass
+        else:
+            self.file_operator.write(
+                process_snapshot.stdout.decode("utf-8"), unique_id="process_snapshot"
+            )
+            self.file_operator.write_csv(
+                unique_id="hashed_files", container=self.hashed_files
+            )
+            self.file_operator.write_csv(
+                unique_id="artefacts", container=self._found_patterns
+            )
+            self.file_operator.compress(container=files)
 
         print(f"Found {len(files)} files containing bitcoin related patterns")
         print(f"Wallet/bitcoin processes running: {indication}")
@@ -233,6 +260,12 @@ def main():
     )
     parser.add_argument(
         "--verbose", "-v", help="Verbosely list files processed.", action="store_true"
+    )
+
+    # this argument is just for development
+    # TODO: remove this in the final version
+    parser.add_argument(
+        "--silent", "-s", help="Do not create any output files", action="store_true"
     )
 
     args = parser.parse_args()
