@@ -17,7 +17,8 @@ import time
 import csv
 from zipfile import ZipFile
 
-from typing import List, Tuple, Union
+
+from typing import List, Union
 from regular_expressions import PATTERNS, EXODUS, ELECTRUM
 from dataclasses import dataclass
 
@@ -87,40 +88,46 @@ class FileOperator:
     perform operations on files that were created during digital forensic
     compression, writing to files (CSV, txt).
     """
+    def __init__(self, run_name):
+        self._run_name = run_name
+        self._run_timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    @staticmethod
-    def write(file, obj: str):
-        with open(file, "w") as f:
+    def write(self, obj: str, unique_id=""):
+        filename = self.generate_filename(unique_id=unique_id, suffix=".txt")
+        with open(filename, "w") as f:
             f.write(obj)
 
-    @staticmethod
-    def write_csv(file, container: List[Union[Match, HashedFile]]):
-        with open(file, "w", newline="") as csvfile:
+    def write_csv(self, container: List[Union[Match, HashedFile]], unique_id=""):
+        filename = self.generate_filename(unique_id=unique_id, suffix=".csv")
+        with open(filename, "w", newline="") as csvfile:
             fieldnames = [column for column in container[0].__dict__.keys()]
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for item in container:
                 writer.writerow(item.__dict__)
 
-    @staticmethod
-    def compress(files: List[str]):
-        with ZipFile("testzipwallet.zip", "w") as zipfile:
-            for file in files:
+    def compress(self, container: List[str], unique_id=""):
+        filename = self.generate_filename(unique_id=unique_id, suffix=".zip")
+        with ZipFile(filename, "w") as zipfile:
+            for file in container:
                 zipfile.write(file)
+
+    def generate_filename(self, unique_id="", suffix="") -> str:
+        return f"{self._run_name}-{self._run_timestamp}-{unique_id}{suffix}"
 
 
 class Controller:
-    def __init__(self, root=".", report_file_name=None):
+    def __init__(
+        self, root=".", run_name=None, target_wallet=None, verbose: bool = False
+    ):
         self.root: str = root
         self._found_patterns: List[Match] = []
-        self.report_file: str = report_file_name or self.generate_filename()
+        self.run_name: str = run_name
         self.hashed_files: List[HashedFile] = []
-        self.file_operator = FileOperator()
+        self.file_operator = FileOperator(run_name)
         self.processor = Processor()
-
-    @staticmethod
-    def generate_filename() -> str:
-        return time.strftime("%Y%m%d-%H%M%S") + " wallet-forensic"
+        self.verbose = verbose
+        self.target_wallet = target_wallet
 
     @staticmethod
     def inappropriate_format(file: str) -> bool:
@@ -142,13 +149,19 @@ class Controller:
             ".gif",
         ]
 
+    def _resolve_path(
+        self,
+    ) -> Path.absolute:
+        current = Path(self.root)
+        current.expanduser()
+        return current.absolute()
+
     def main(self) -> None:
         process_snapshot = self.processor.get_running_processes()
         command_history = self.processor.examine_command_history()
         indication = self.processor.examine_process_snapshot(process_snapshot)
 
-        current = Path(self.root)
-        current_absolute = str(current.absolute())
+        current_absolute = self._resolve_path()
         for root, _, files in os.walk(current_absolute):
             for file in files:
                 abs_path = root + "/" + file
@@ -158,17 +171,16 @@ class Controller:
 
         files = [match.file for match in self._found_patterns]
         files = list(set(files))
-
         for file in files:
-            fingerprint = self.touch_sha256(Path(file))
+            fingerprint = self._touch_sha256(Path(file))
             self.hashed_files.append(HashedFile(file, fingerprint))
 
         self.file_operator.write(
-            "process_snapshot.txt", process_snapshot.stdout.decode("utf-8")
+            process_snapshot.stdout.decode("utf-8"),  unique_id="process_snapshot"
         )
-        self.file_operator.write_csv("hashed_files.csv", self.hashed_files)
-        self.file_operator.write_csv("found_patterns.csv", self._found_patterns)
-        self.file_operator.compress(files)
+        self.file_operator.write_csv(unique_id="hashed_files", container=self.hashed_files)
+        self.file_operator.write_csv(unique_id="artefacts", container=self._found_patterns)
+        self.file_operator.compress(container=files)
 
         print(f"Found {len(files)} files containing bitcoin related patterns")
         print(f"Wallet/bitcoin processes running: {indication}")
@@ -182,9 +194,11 @@ class Controller:
             for key in PATTERNS.keys():
                 match = re.search(PATTERNS[key], line)
                 if match:
+                    if self.verbose:
+                        print(f"Match found in file: {file}")
                     self.add_match(Match(file, match.group().decode("utf-8"), key))
 
-    def touch_sha256(self, file: Path) -> str:
+    def _touch_sha256(self, file: Path) -> str:
         # solution obtained from the following link:
         # https://stackoverflow.com/questions/22058048/hashing-a-file-in-python
         h = hashlib.sha256()
@@ -198,12 +212,44 @@ class Controller:
 
 
 def main():
-    # not really important now, does not do anything
     parser = argparse.ArgumentParser(description="Look for bitcoin artifacts")
-    parser.add_argument("--fast", help="Performs fast scan of /home directory")
+    group_wallets = parser.add_mutually_exclusive_group()
+    parser.add_argument("--name", "-n", help="Name of the run", required=True)
+    parser.add_argument(
+        "--directory",
+        "-d",
+        help="Root directory to start the scan from. If not specified, then current directory is the root directory",
+        default=".",
+    )
+    group_wallets.add_argument(
+        "--exodus",
+        help="Search only for Exodus related files.",
+        action="store_true",
+    )
+    group_wallets.add_argument(
+        "--electrum",
+        help="Search only for Electrum related files.",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--verbose", "-v", help="Verbosely list files processed.", action="store_true"
+    )
+
     args = parser.parse_args()
 
-    c = Controller("/home/tom/erazmus")
+    if args.exodus:
+        target_wallet = "exodus"
+    elif args.electrum:
+        target_wallet = "electrum"
+    else:
+        target_wallet = None
+
+    c = Controller(
+        root=args.directory,
+        run_name=args.name,
+        target_wallet=target_wallet,
+        verbose=args.verbose,
+    )
     c.main()
 
 
