@@ -235,14 +235,19 @@ class Controller:
 
     def search_for_pattern(self, file: str, mode="rb"):
         counter = 0
-        for i, line in enumerate(open(file, mode)):
-            for key in PATTERNS.keys():
-                match = re.search(PATTERNS[key], line)
-                if match:
-                    self.add_match(Match(file, match.group().decode("utf-8"), key))
-                    counter += 1
-                    if self.verbose:
-                        print(f"Match found in file: {file}")
+        try:
+            with open(file, mode) as f:
+                for i, line in enumerate(f):
+                    for key in PATTERNS.keys():
+                        match = re.search(PATTERNS[key], line)
+                        if match:
+                            self.add_match(Match(file, match.group().decode("utf-8"), key))
+                            counter += 1
+                            if self.verbose:
+                                print(f"Match found in file: {file}")
+        except FileNotFoundError:
+            pass  # probably a broken symbolic link
+
 
         print(f"Exploring file: {file} [{counter} matches]")
 
