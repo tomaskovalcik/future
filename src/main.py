@@ -245,8 +245,8 @@ class Controller:
                             counter += 1
                             if self.verbose:
                                 print(f"Match found in file: {file}")
-        except FileNotFoundError:
-            pass  # probably a broken symbolic link
+        except (FileNotFoundError, OSError):
+            pass  # file is probably a broken symbolic link or a network socket
 
 
         print(f"Exploring file: {file} [{counter} matches]")
