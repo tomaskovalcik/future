@@ -17,7 +17,6 @@ import time
 import csv
 from zipfile import ZipFile
 
-
 from typing import List, Union
 from regular_expressions import PATTERNS, EXODUS, ELECTRUM
 from dataclasses import dataclass
@@ -188,9 +187,6 @@ class Controller:
         command_history = self.processor.examine_command_history()
         indication = self.processor.examine_process_snapshot(process_snapshot)
 
-        if self.target_wallet:
-            print(self.specific_wallet_check())
-
         current_absolute = self.file_operator.resolve_path(self.root)
         for root, _, files in os.walk(current_absolute):
             for file in files:
@@ -205,21 +201,33 @@ class Controller:
         for file in files:
             fingerprint = self._touch_sha256(Path(file))
             self.hashed_files.append(HashedFile(file, fingerprint))
-        
+
         reports = None
         if self.silent:
             pass
         else:
-            reports = [self.file_operator.write(
-                process_snapshot.stdout.decode("utf-8"), unique_id="process_snapshot"
-            ), self.file_operator.write_csv(
-                unique_id="hashed_files", container=self.hashed_files
-            ), self.file_operator.write_csv(
-                unique_id="artefacts", container=self._found_patterns
-            ), self.file_operator.compress(container=files)]
+            reports = [
+                self.file_operator.write(
+                    process_snapshot.stdout.decode("utf-8"),
+                    unique_id="process_snapshot",
+                ),
+                self.file_operator.write_csv(
+                    unique_id="hashed_files", container=self.hashed_files
+                ),
+                self.file_operator.write_csv(
+                    unique_id="artefacts", container=self._found_patterns
+                ),
+                self.file_operator.compress(container=files),
+            ]
 
         self.print_summary(
-            files=files, indication=indication, command_history=command_history, reports=reports, total_patterns=total_patterns,
+            files=files,
+            indication=indication,
+            command_history=command_history,
+            reports=reports,
+            total_patterns=total_patterns,
+            machine_info=self.processor.get_host_information(),
+            target_wallet=self.target_wallet,
         )
 
     def add_match(self, match: Match) -> None:
@@ -254,16 +262,24 @@ class Controller:
 
         print("\n*** RUN SUMMARY ***\n")
 
+        print(f"System information: {kwargs['machine_info']}\n")
+
         print(f"Files containing bitcoin related patterns: {len(kwargs['files'])}")
         print(f"Total number of found patterns: {len(kwargs['total_patterns'])}")
         print(f"Total number of unique patterns: {len(set(kwargs['total_patterns']))}")
         print(f"Wallet/bitcoin processes running: {kwargs['indication']}")
         print(f"Wallet/bitcoin command used: {kwargs['command_history']}")
 
-        print(f"Results saved to: {kwargs['reports']}")
+        if kwargs["target_wallet"]:
+            print(
+                f"{kwargs['target_wallet']} wallet exists: {self.specific_wallet_check()}"
+            )
+
+        if kwargs["reports"]:
+            print(f"Results saved to: {kwargs['reports']}")
 
         print(
-            "\nTo save this output to a file, use output redirection (e.g. python3 main.py -q > quick_scan.txt)"
+            "\nTIP: To save this output to a file, use output redirection (e.g. python3 main.py --name test -q > quick_scan.txt)"
         )
         print("\n*** SUMMARY END ***\n")
 
