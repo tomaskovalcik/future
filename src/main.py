@@ -90,52 +90,36 @@ class FileOperator:
         self._run_name = run_name
         self._run_timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    def write(self, obj: str, unique_id=""):
+    def write(self, obj: str, unique_id="") -> str:
         filename = self.generate_filename(unique_id=unique_id, suffix=".txt")
         with open(filename, "w") as f:
             f.write(obj)
+        return filename
 
     def write_csv(self, container: List[Union[Match, HashedFile]], unique_id=""):
         filename = self.generate_filename(unique_id=unique_id, suffix=".csv")
         with open(filename, "w", newline="") as csvfile:
-            fieldnames = [column for column in container[0].__dict__.keys()]
+            try:
+                fieldnames = [column for column in container[0].__dict__.keys()]
+            except IndexError:
+                # when container is empty
+                return filename
+
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for item in container:
                 writer.writerow(item.__dict__)
+        return filename
 
     def compress(self, container: List[str], unique_id=""):
         filename = self.generate_filename(unique_id=unique_id, suffix=".zip")
         with ZipFile(filename, "w") as zipfile:
             for file in container:
                 zipfile.write(file)
+        return filename
 
     def generate_filename(self, unique_id="", suffix="") -> str:
         return f"{self._run_name}-{self._run_timestamp}-{unique_id}{suffix}"
-
-
-class Controller:
-    def __init__(
-        self,
-        root=".",
-        run_name=None,
-        target_wallet=None,
-        verbose: bool = False,
-        silent: bool = False,
-    ):
-        self.root: str = root
-        self._found_patterns: List[Match] = []
-        self.run_name: str = run_name
-        self.hashed_files: List[HashedFile] = []
-        self.file_operator = FileOperator(run_name)
-        self.processor = Processor()
-        self.verbose = verbose
-        self.silent = silent
-        self.target_wallet = target_wallet
-        self.default_wallets_paths = {
-            "exodus": "~/.config/Exodus",
-            "electrum": "~/.electrum",
-        }
 
     @staticmethod
     def inappropriate_format(file: str) -> bool:
@@ -157,12 +141,39 @@ class Controller:
             ".gif",
         ]
 
-    def _resolve_path(
-        self,
+    @staticmethod
+    def resolve_path(
+        root,
     ) -> Path.absolute:
-        current = Path(self.root)
+        current = Path(root)
         current.expanduser()
         return current.absolute()
+
+
+class Controller:
+    def __init__(
+        self,
+        root=".",
+        run_name=None,
+        target_wallet=None,
+        verbose: bool = False,
+        silent: bool = False,
+        quick: bool = False,
+    ):
+        self.root: str = root
+        self._found_patterns: List[Match] = []
+        self.run_name: str = run_name
+        self.hashed_files: List[HashedFile] = []
+        self.file_operator = FileOperator(run_name)
+        self.processor = Processor()
+        self.verbose = verbose
+        self.silent = silent
+        self.quick = quick
+        self.target_wallet = target_wallet
+        self.default_wallets_paths = {
+            "exodus": "~/.config/Exodus",
+            "electrum": "~/.electrum",
+        }
 
     def specific_wallet_check(self):
         path = (
@@ -180,50 +191,52 @@ class Controller:
         if self.target_wallet:
             print(self.specific_wallet_check())
 
-        current_absolute = self._resolve_path()
+        current_absolute = self.file_operator.resolve_path(self.root)
         for root, _, files in os.walk(current_absolute):
             for file in files:
                 abs_path = root + "/" + file
-                if self.inappropriate_format(abs_path):
+                if self.quick and self.file_operator.inappropriate_format(abs_path):
                     continue
                 self.search_for_pattern(abs_path)
 
         files = [match.file for match in self._found_patterns]
+        total_patterns = [match.hit for match in self._found_patterns]
         files = list(set(files))
         for file in files:
             fingerprint = self._touch_sha256(Path(file))
             self.hashed_files.append(HashedFile(file, fingerprint))
-
-        # TODO: remove if/else in the final version
-        if not self.silent:
+        
+        reports = None
+        if self.silent:
             pass
         else:
-            self.file_operator.write(
+            reports = [self.file_operator.write(
                 process_snapshot.stdout.decode("utf-8"), unique_id="process_snapshot"
-            )
-            self.file_operator.write_csv(
+            ), self.file_operator.write_csv(
                 unique_id="hashed_files", container=self.hashed_files
-            )
-            self.file_operator.write_csv(
+            ), self.file_operator.write_csv(
                 unique_id="artefacts", container=self._found_patterns
-            )
-            self.file_operator.compress(container=files)
+            ), self.file_operator.compress(container=files)]
 
-        print(f"Found {len(files)} files containing bitcoin related patterns")
-        print(f"Wallet/bitcoin processes running: {indication}")
-        print(f"Wallet/bitcoin command used: {command_history}")
+        self.print_summary(
+            files=files, indication=indication, command_history=command_history, reports=reports, total_patterns=total_patterns,
+        )
 
     def add_match(self, match: Match) -> None:
         self._found_patterns.append(match)
 
     def search_for_pattern(self, file: str, mode="rb"):
+        counter = 0
         for i, line in enumerate(open(file, mode)):
             for key in PATTERNS.keys():
                 match = re.search(PATTERNS[key], line)
                 if match:
+                    self.add_match(Match(file, match.group().decode("utf-8"), key))
+                    counter += 1
                     if self.verbose:
                         print(f"Match found in file: {file}")
-                    self.add_match(Match(file, match.group().decode("utf-8"), key))
+
+        print(f"Exploring file: {file} [{counter} matches]")
 
     def _touch_sha256(self, file: Path) -> str:
         # solution obtained from the following link:
@@ -236,6 +249,23 @@ class Controller:
                     break
                 h.update(chunk)
         return h.hexdigest()
+
+    def print_summary(self, **kwargs):
+
+        print("\n*** RUN SUMMARY ***\n")
+
+        print(f"Files containing bitcoin related patterns: {len(kwargs['files'])}")
+        print(f"Total number of found patterns: {len(kwargs['total_patterns'])}")
+        print(f"Total number of unique patterns: {len(set(kwargs['total_patterns']))}")
+        print(f"Wallet/bitcoin processes running: {kwargs['indication']}")
+        print(f"Wallet/bitcoin command used: {kwargs['command_history']}")
+
+        print(f"Results saved to: {kwargs['reports']}")
+
+        print(
+            "\nTo save this output to a file, use output redirection (e.g. python3 main.py -q > quick_scan.txt)"
+        )
+        print("\n*** SUMMARY END ***\n")
 
 
 def main():
@@ -262,10 +292,16 @@ def main():
         "--verbose", "-v", help="Verbosely list files processed.", action="store_true"
     )
 
-    # this argument is just for development
-    # TODO: remove this in the final version
     parser.add_argument(
         "--silent", "-s", help="Do not create any output files", action="store_true"
+    )
+
+    parser.add_argument(
+        "--quick",
+        "-q",
+        help="Do not scan files ending with the following suffixes: "
+        "[.zip, .tar, .gzip, .7z, .mp3, .mp4, .avi, .jpg, .png, .gif]",
+        action="store_true",
     )
 
     args = parser.parse_args()
@@ -282,6 +318,8 @@ def main():
         run_name=args.name,
         target_wallet=target_wallet,
         verbose=args.verbose,
+        silent=args.silent,
+        quick=args.quick,
     )
     c.main()
 

@@ -8,7 +8,7 @@ EXODUS = b"[eE]xodus"
 ELECTRUM = b"[eE]lectrum"
 
 PATTERNS = {
-    "BITCOIN_VANINITY_ADDRESS": b"[1a-km-zA-HJ-NP-Z1-9]{24,33}",
+    "BITCOIN_VANITY_ADDRESS": b"[1a-km-zA-HJ-NP-Z1-9]{24,33}",
     "BITCOIN_P2SH": b"^[a-km-zA-HJ-NP-Z1-9]{24,33}",  # multisignature,
     "BTCOIN_BECH32": b"bc1[a-zA-HJ-NP-Z0-9]{25,59}",
     "BITCOIN_LEGACY": b"[13][a-km-zA-HJ-NP-Z1-9]{25,34}",
