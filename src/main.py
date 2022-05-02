@@ -77,7 +77,10 @@ class Processor:
                         if re.search(EXODUS, line) or re.search(ELECTRUM, line):
                             return True
             except PermissionError as err:
-                print(f"Failed reading {path}. Reason {err}")
+                # change color to red when printing error
+                fail = '\033[91m'
+                endc = '\003[0m'
+                print(f"{fail}Failed reading {path}. Reason {err}{endc}")
         return False
 
 
