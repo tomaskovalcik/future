@@ -79,7 +79,7 @@ class Processor:
             except PermissionError as err:
                 # change color to red when printing error
                 fail = '\033[91m'
-                endc = '\003[0m'
+                endc = '\033[0m'
                 print(f"{fail}Failed reading {path}. Reason {err}{endc}")
         return False
 
