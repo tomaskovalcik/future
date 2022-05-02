@@ -71,10 +71,13 @@ class Processor:
     def examine_command_history() -> bool:
         path = Path("~/.bash_history")
         if path.expanduser().exists():
-            with open(path.expanduser(), "rb") as file:
-                for line in file:
-                    if re.search(EXODUS, line) or re.search(ELECTRUM, line):
-                        return True
+            try:
+                with open(path.expanduser(), "rb") as file:
+                    for line in file:
+                        if re.search(EXODUS, line) or re.search(ELECTRUM, line):
+                            return True
+            except PermissionError as err:
+                print(f"Failed reading {path}. Reason {err}")
         return False
 
 
@@ -247,8 +250,6 @@ class Controller:
                                 print(f"Match found in file: {file}")
         except (FileNotFoundError, OSError):
             pass  # file is probably a broken symbolic link or a network socket
-
-
         print(f"Exploring file: {file} [{counter} matches]")
 
     def _touch_sha256(self, file: Path) -> str:
