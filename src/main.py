@@ -275,7 +275,7 @@ class Controller:
         print("\n*** RUN SUMMARY ***\n")
 
         t = time.localtime()
-        current_time = time.strftime("%H:%M:%S %D", t)
+        current_time = time.strftime("%H:%M:%S", t)
         print(f"Test executed at: {current_time}")
 
         print(f"System information: {kwargs['machine_info']}\n")
