@@ -20,7 +20,7 @@ from zipfile import ZipFile
 from typing import List, Union
 from regular_expressions import PATTERNS, EXODUS, ELECTRUM
 from dataclasses import dataclass
-
+from collections import Counter
 
 @dataclass
 class Match:
@@ -205,10 +205,14 @@ class Controller:
 
         files = [match.file for match in self._found_patterns]
         total_patterns = [match.hit for match in self._found_patterns]
+        regex_type = [match.type for match in self._found_patterns]
+
         files = list(set(files))
         for file in files:
             fingerprint = self._touch_sha256(Path(file))
             self.hashed_files.append(HashedFile(file, fingerprint))
+
+        regex_type_count = Counter(regex_type).most_common(3)
 
         reports = None
         if self.silent:
@@ -237,6 +241,7 @@ class Controller:
             machine_info=self.processor.get_host_information(),
             target_wallet=self.target_wallet,
             explored_files=explored_files,
+            regex_type_count=regex_type_count,
         )
 
     def add_match(self, match: Match) -> None:
@@ -286,6 +291,8 @@ class Controller:
         print(f"Total number of unique patterns: {len(set(kwargs['total_patterns']))}")
         print(f"Wallet/bitcoin processes running: {kwargs['indication']}")
         print(f"Wallet/bitcoin command used: {kwargs['command_history']}")
+
+        print(f"Three most common types of addresses:")
 
         if kwargs["target_wallet"]:
             print(
