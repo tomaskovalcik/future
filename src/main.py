@@ -193,6 +193,7 @@ class Controller:
         command_history = self.processor.examine_command_history()
         indication = self.processor.examine_process_snapshot(process_snapshot)
 
+        explored_files: int = 0
         current_absolute = self.file_operator.resolve_path(self.root)
         for root, _, files in os.walk(current_absolute):
             for file in files:
@@ -200,6 +201,7 @@ class Controller:
                 if self.quick and self.file_operator.inappropriate_format(abs_path):
                     continue
                 self.search_for_pattern(abs_path)
+                explored_files += 1
 
         files = [match.file for match in self._found_patterns]
         total_patterns = [match.hit for match in self._found_patterns]
@@ -234,6 +236,7 @@ class Controller:
             total_patterns=total_patterns,
             machine_info=self.processor.get_host_information(),
             target_wallet=self.target_wallet,
+            explored_files=explored_files,
         )
 
     def add_match(self, match: Match) -> None:
@@ -271,8 +274,13 @@ class Controller:
 
         print("\n*** RUN SUMMARY ***\n")
 
+        t = time.localtime()
+        current_time = time.strftime("%H:%M:%S %D", t)
+        print(f"Test executed at: {current_time}")
+
         print(f"System information: {kwargs['machine_info']}\n")
 
+        print(f"Total number of explored files: {kwargs['explored_files']}")
         print(f"Files containing bitcoin related patterns: {len(kwargs['files'])}")
         print(f"Total number of found patterns: {len(kwargs['total_patterns'])}")
         print(f"Total number of unique patterns: {len(set(kwargs['total_patterns']))}")
