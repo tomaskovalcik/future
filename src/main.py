@@ -22,6 +22,7 @@ from regular_expressions import PATTERNS, EXODUS, ELECTRUM
 from dataclasses import dataclass
 from collections import Counter
 
+
 @dataclass
 class Match:
     file: str
@@ -78,8 +79,8 @@ class Processor:
                             return True
             except PermissionError as err:
                 # change color to red when printing error
-                fail = '\033[91m'
-                endc = '\033[0m'
+                fail = "\033[91m"
+                endc = "\033[0m"
                 print(f"{fail}Failed reading {path}. Reason {err}{endc}")
         return False
 
@@ -255,7 +256,9 @@ class Controller:
                     for key in PATTERNS.keys():
                         match = re.search(PATTERNS[key], line)
                         if match:
-                            self.add_match(Match(file, match.group().decode("utf-8"), key))
+                            self.add_match(
+                                Match(file, match.group().decode("utf-8"), key)
+                            )
                             counter += 1
                             if self.verbose:
                                 print(f"Match found in file: {file}")
@@ -293,6 +296,9 @@ class Controller:
         print(f"Wallet/bitcoin command used: {kwargs['command_history']}")
 
         print(f"Three most common types of addresses:")
+        for regex, count in kwargs["regex_type_count"]:
+            print(f"{regex}: {count} hits")
+        print()
 
         if kwargs["target_wallet"]:
             print(
